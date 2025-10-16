@@ -298,5 +298,66 @@ const resetPassword = asynchandler(async(req,res)=>{
       .status(200)
       .json(new ApiResponse(200, user, "Profile updated successfully"));
   });
+  //Admin Dashboard
+const getAllUsers = asynchandler(async(req,res)=>{
+  const user = await User.find()
+  if(!user)
+  {new ApiError(400,"user not found ")}
+  return res
+  .status(200)
+  .json(new ApiResponse(200,user,"user are find succesfully"))
 
-export { registerUser, loginUser, LogoutUser, refreshAccessToken, forgetPassword, resetPassword, updatePassword, updateProfile };
+})
+// get single user (admin)
+const singleUser = asynchandler(async(req,res)=>{
+  const user = await User.findById(req.params.id)
+  if(!user){
+    throw new ApiError(400,"user not found with this id")
+  }
+  return res
+  .status(200)
+  .json(new ApiResponse(200,user,"user are find succesfully"))
+})
+
+//update user role (admin)
+
+const updateUserRole = asynchandler(async(req,res)=>{
+  const {name,email,gender,role}= req.body
+  const user = await User.findByIdAndUpdate(req.params._id,
+    {
+      $set:{
+        name,
+        email,
+        gender,
+        role
+      },
+      
+    },{
+      new:true,
+       runValidators: true
+    }
+  )
+  if(!user){
+    throw new ApiError(400,"user not found with this id")
+  }
+return res
+  .status(200)
+  .json(new ApiResponse(200,user,"user updated successfully"))
+})
+
+//delete user (admin)
+const deleteUser = asynchandler(async (req, res) => {
+  const userId = req.params._id;
+
+  const user = await User.findByIdAndDelete(userId);
+
+  if (!user) {
+    throw new ApiError(404, "User not found with this id");
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "User deleted successfully"));
+});
+
+export { registerUser, loginUser, LogoutUser, refreshAccessToken, forgetPassword, resetPassword, updatePassword, updateProfile , getAllUsers, singleUser, updateUserRole, deleteUser};
