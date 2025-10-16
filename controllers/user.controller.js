@@ -5,6 +5,7 @@ import { ApiResponse } from "../utils/apiresponse.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import jwt from "jsonwebtoken";
 import { sendEmail } from "../utils/sendEmail.js";
+import { v2 } from "cloudinary";
 const generateAccessAndRefreshToken = async (userId) => {
   try {
     const user = await User.findById(userId);
@@ -228,4 +229,74 @@ try {
 
   
 })
-export { registerUser, loginUser, LogoutUser, refreshAccessToken, forgetPassword };
+
+const resetPassword = asynchandler(async(req,res)=>{
+  // create hash token 
+  const resetPasswordToken = crypto.createHash("sha256").update(req.params.token).digest("hex")
+  const user = await User.findOne({
+    resetPasswordToken,
+    resetPasswordExpire:{$gt:Date.now()}
+  })
+  if(!user)
+  {throw new ApiError(400,"invalid token or token is expired")}
+  user.password = req.body.password;
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpire = undefined;
+  await user.save();
+  return res.status(200).json(new ApiResponse(200,{}, "password reset successfully"))
+})
+  const updatePassword = asynchandler(async(req,res)=>{
+    const user = await User.findById(req.user._id).select("+password")
+    if(!user)
+    {throw new ApiError(400,"user not found")}
+    const isPasswordCorrect = await user.isPasswordCorrect(req.body.oldPassword)
+    if(!isPasswordCorrect)
+    {throw new ApiError(400,"old password is incorrect")}
+    user.password = req.body.newPassword;
+    await user.save({ validateBeforeSave: false });
+    return res.status(200).json(new ApiResponse(200,{}, "password updated successfully"))
+
+     
+
+  })
+  const updateProfile = asynchandler(async (req, res) => {
+    const { name, email } = req.body;
+    const avatarLocalPath = req.file?.path;
+    let avatarUrl = req.user.avatar?.url;
+
+    // If a new avatar is uploaded, upload to Cloudinary and delete old
+    if (avatarLocalPath) {
+      const avatar = await uploadOnCloudinary(avatarLocalPath);
+      if (!avatar) {
+        throw new ApiError(500, "Something went wrong while uploading avatar");
+      }
+      // Destroy old avatar if exists
+      if (req.user.avatar?.public_id) {
+        await v2.uploader.destroy(req.user.avatar.public_id);
+      }
+      avatarUrl = avatar.url;
+    }
+
+    // Update user
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      {
+        $set: {
+          name: name.trim(),
+          email: email.trim(),
+          avatar: avatarUrl,
+        },
+      },
+      { new: true, runValidators: true }
+    ).select("-password -refreshToken");
+
+    if (!user) {
+      throw new ApiError(400, "User not found");
+    }
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, user, "Profile updated successfully"));
+  });
+
+export { registerUser, loginUser, LogoutUser, refreshAccessToken, forgetPassword, resetPassword, updatePassword, updateProfile };

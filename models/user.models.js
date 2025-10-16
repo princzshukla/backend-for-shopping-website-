@@ -47,8 +47,8 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-// ✅ Compare password
-userSchema.methods.comparePassword = async function (password) {
+// ✅ Compare password (used for login & change password)
+userSchema.methods.isPasswordCorrect = async function (password) {
   return await bcrypt.compare(password, this.password);
 };
 
@@ -72,7 +72,7 @@ userSchema.methods.generateRefreshToken = function () {
   });
 };
 
-// 🔑 Generate Reset Password Token
+// 🔑 Generate Reset Password Token (for forgot password)
 userSchema.methods.getResetPasswordToken = function () {
   const resetToken = crypto.randomBytes(20).toString("hex");
 
@@ -80,7 +80,7 @@ userSchema.methods.getResetPasswordToken = function () {
     .createHash("sha256")
     .update(resetToken)
     .digest("hex");
-  this.resetPasswordExpire = Date.now() + 15 * 60 * 1000; // 15 min
+  this.resetPasswordExpire = Date.now() + 15 * 60 * 1000; // 15 minutes
 
   return resetToken;
 };
