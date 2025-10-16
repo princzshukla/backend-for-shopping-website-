@@ -11,6 +11,7 @@
   "type": "module",
   "dependencies": {
     "-": "^0.0.1",
+    "@sendgrid/mail": "^8.1.6",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.7.0",
     "cookieparser": "^0.1.0",

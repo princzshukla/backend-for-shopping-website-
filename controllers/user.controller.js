@@ -4,7 +4,7 @@ import { asynchandler } from "../utils/asynchandler.js";
 import { ApiResponse } from "../utils/apiresponse.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import jwt from "jsonwebtoken";
-
+import { sendEmail } from "../utils/sendEmail.js";
 const generateAccessAndRefreshToken = async (userId) => {
   try {
     const user = await User.findById(userId);
@@ -144,25 +144,27 @@ const LogoutUser = asynchandler(async (req, res) => {
     .json(new ApiResponse(200, {}, "User logged out successfully"));
 });
 //Refresh Access Token
-const refreshAcessToken = asynchandler(async (req, res) => {
-  const incomingIncomingRefreshToken =
+const refreshAccessToken = asynchandler(async (req, res) => {
+  const incomingRefreshToken =
     req.body.refreshToken || req.cookies.refreshToken;
 
-  if (!incomingIncomingRefreshToken) {
+  if (!incomingRefreshToken) {
     throw new ApiError(400, "refresh token is required");
   }
+
   try {
     const decodeToken = jwt.verify(
-      incomingIncomingRefreshToken,
+      incomingRefreshToken,
       process.env.REFRESH_TOKEN_SECRET
     );
+
     const user = await User.findById(decodeToken._id);
     if (!user) {
-      throw new ApiError(400, "user is not found with this token");
+      throw new ApiError(400, "user not found with this token");
     }
 
-    if (user?.refreshToken !== incomingIncomingRefreshToken) {
-      throw new ApiError(401, "invlaid refresh Token");
+    if (user?.refreshToken !== incomingRefreshToken) {
+      throw new ApiError(401, "invalid refresh token");
     }
 
     const options = {
@@ -170,23 +172,28 @@ const refreshAcessToken = asynchandler(async (req, res) => {
       secure: true,
     };
 
-    const { accessToken, newrefreshToken } =
+    const { accessToken, refreshToken } =
       await generateAccessAndRefreshToken(user._id);
+
     return res
       .status(200)
-      .cookie("refreshToken", newrefreshToken, options)
+      .cookie("refreshToken", refreshToken, options)
       .cookie("accessToken", accessToken, options)
       .json(
-        new ApiResponse(200, {
-          accessToken,
-          refreshToken: newrefreshToken,
-        }),
-        "access token generated successfully"
+        new ApiResponse(
+          200,
+          {
+            accessToken,
+            refreshToken,
+          },
+          "access token generated successfully"
+        )
       );
   } catch (error) {
     throw new ApiError(401, "invalid refresh token");
   }
 });
+
 //Forget Password
 const forgetPassword = asynchandler(async(req,res)=>{
   const {email} = req.body;
@@ -195,7 +202,30 @@ const forgetPassword = asynchandler(async(req,res)=>{
   const user = await User.findOne({email})
   if(!user)
   {throw new ApiError(400,"user not found with this email")}
-  const generateToken = user.generateAccessAndRefreshToken(user._id)
+  const resetToken = user.resetPasswordToken()
+  await user.save({validateBeforeSave:false})
 
+    const resetPasswordUrl = `https://${req.get(
+      "host"
+    )}/password/reset/${resetToken}`;
+try {
+  await sendEmail({
+    email: user.email,
+    templateId: process.env.SENDGRID_RESET_TEMPLATEID,
+    data: {
+      reset_url: resetPasswordUrl,
+    },
+  })
+  return res.status(200).json(new ApiResponse(200,{}, "email sent successfully"))
+  
+} catch (error) {
+          user.resetPasswordToken = undefined;
+        user.resetPasswordExpire = undefined;
+
+        await user.save({ validateBeforeSave: false });
+        return next(new ErrorHandler(error.message, 500))
+    }
+
+  
 })
-export { registerUser, loginUser, LogoutUser, refreshAcessToken };
+export { registerUser, loginUser, LogoutUser, refreshAccessToken, forgetPassword };
