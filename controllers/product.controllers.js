@@ -63,9 +63,49 @@ const adminProducts = asynchandler(async(req,res)=>{
 
 })
 //create products -- admin 
-const createProduct = asynchandler(async(req,res)=>{
-    
-})
+const createProduct = asynchandler(async (req, res) => {
+  let images = [];
+
+  // If single image (string)
+  if (typeof req.body.images === "string") {
+    images.push(req.body.images);
+  } else {
+    images = req.body.images;
+  }
+
+  const imageLinks = [];
+
+  for (let i = 0; i < images.length; i++) {
+    const result = await cloudinary.v2.uploader.upload(images[i], {
+      folder: "products",
+    });
+
+    imageLinks.push({
+      public_id: result.public_id,
+      url: result.secure_url,
+    });
+  }
+
+  const result = await cloudinary.v2.uploader.upload(req.body.logo,{folder:"brands",})
+   const brandLogo = {
+     public_id: result.public_id,
+     url: result.secure_url,
+   };
+    req.body.brand = {
+      name: req.body.brandname,
+      logo: brandLogo,
+    };
+     req.body.images = imageLinks;
+     req.body.user = req.user.id;
+  
+
+  // Now you can save imageLinks to your database...
+  res.status(200).json({
+    success: true,
+    images: imageLinks,
+  });
+});
+
  
 //updateProduct -- admin
 const updateProduct = asynchandler(async(req,res)=>{

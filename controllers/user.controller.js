@@ -144,6 +144,14 @@ const LogoutUser = asynchandler(async (req, res) => {
     .clearCookie("accessToken", options)
     .json(new ApiResponse(200, {}, "User logged out successfully"));
 });
+
+const getUserDetails = asynchandler(async(req,res)=>{
+      const user = await User.findById(req.user.id);
+      return res
+      .status(200)
+      .json(new ApiResponse(200,"user details fetched succesfully"))
+
+})
 //Refresh Access Token
 const refreshAccessToken = asynchandler(async (req, res) => {
   const incomingRefreshToken =
@@ -360,4 +368,5 @@ const deleteUser = asynchandler(async (req, res) => {
     .json(new ApiResponse(200, user, "User deleted successfully"));
 });
 
-export { registerUser, loginUser, LogoutUser, refreshAccessToken, forgetPassword, resetPassword, updatePassword, updateProfile , getAllUsers, singleUser, updateUserRole, deleteUser};
+export { registerUser, loginUser, LogoutUser,getUserDetails, refreshAccessToken, forgetPassword, resetPassword, updatePassword, updateProfile , getAllUsers, singleUser, updateUserRole, deleteUser};
+ 

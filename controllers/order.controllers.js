@@ -47,6 +47,7 @@ const getrSingleOrderDetails = asynchandler(async (req, res) => {
     "user",
     "name email"
   );
+  
   if (!order) {
     throw new ApiError(400, "oder does not exist with this id ");
   }
