@@ -1,4 +1,4 @@
-import { Order } from "../models/order.models";
+import { Order } from "../models/order.models.js";
 import { ApiError } from "../utils/apierror.js";
 import { asynchandler } from "../utils/asynchandler.js";
 import { ApiResponse } from "../utils/apiresponse.js";
@@ -47,7 +47,7 @@ const getrSingleOrderDetails = asynchandler(async (req, res) => {
     "user",
     "name email"
   );
-  
+
   if (!order) {
     throw new ApiError(400, "oder does not exist with this id ");
   }

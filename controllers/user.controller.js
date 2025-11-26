@@ -50,7 +50,7 @@ const registerUser = asynchandler(async (req, res) => {
     throw new ApiError(500, "someting went wrong while uploading avatar");
   }
 
-  const user = User.create({
+  const user = await User.create({
     name,
     email,
     gender,
@@ -80,7 +80,7 @@ const loginUser = asynchandler(async (req, res) => {
     throw new ApiError(400, "email is required");
   }
 
-  const user = User.findOne({ email });
+  const user = await User.findOne({ email });
 
   if (!user) {
     throw new ApiError(400, "User is not found with this email");
@@ -145,13 +145,12 @@ const LogoutUser = asynchandler(async (req, res) => {
     .json(new ApiResponse(200, {}, "User logged out successfully"));
 });
 
-const getUserDetails = asynchandler(async(req,res)=>{
-      const user = await User.findById(req.user.id);
-      return res
-      .status(200)
-      .json(new ApiResponse(200,"user details fetched succesfully"))
-
-})
+const getUserDetails = asynchandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "user details fetched successfully"));
+});
 //Refresh Access Token
 const refreshAccessToken = asynchandler(async (req, res) => {
   const incomingRefreshToken =
@@ -181,8 +180,9 @@ const refreshAccessToken = asynchandler(async (req, res) => {
       secure: true,
     };
 
-    const { accessToken, refreshToken } =
-      await generateAccessAndRefreshToken(user._id);
+    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
+      user._id
+    );
 
     return res
       .status(200)
@@ -204,154 +204,163 @@ const refreshAccessToken = asynchandler(async (req, res) => {
 });
 
 //Forget Password
-const forgetPassword = asynchandler(async(req,res)=>{
-  const {email} = req.body;
-  if(!email)
-  {throw new ApiError(400,"email is required")}
-  const user = await User.findOne({email})
-  if(!user)
-  {throw new ApiError(400,"user not found with this email")}
-  const resetToken = user.resetPasswordToken()
-  await user.save({validateBeforeSave:false})
+const forgetPassword = asynchandler(async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    throw new ApiError(400, "email is required");
+  }
+  const user = await User.findOne({ email });
+  if (!user) {
+    throw new ApiError(400, "user not found with this email");
+  }
+  const resetToken = user.resetPasswordToken();
+  await user.save({ validateBeforeSave: false });
 
-    const resetPasswordUrl = `https://${req.get(
-      "host"
-    )}/password/reset/${resetToken}`;
-try {
-  await sendEmail({
-    email: user.email,
-    templateId: process.env.SENDGRID_RESET_TEMPLATEID,
-    data: {
-      reset_url: resetPasswordUrl,
-    },
-  })
-  return res.status(200).json(new ApiResponse(200,{}, "email sent successfully"))
-  
-} catch (error) {
-          user.resetPasswordToken = undefined;
-        user.resetPasswordExpire = undefined;
+  const resetPasswordUrl = `https://${req.get(
+    "host"
+  )}/password/reset/${resetToken}`;
+  try {
+    await sendEmail({
+      email: user.email,
+      templateId: process.env.SENDGRID_RESET_TEMPLATEID,
+      data: {
+        reset_url: resetPasswordUrl,
+      },
+    });
+    return res
+      .status(200)
+      .json(new ApiResponse(200, {}, "email sent successfully"));
+  } catch (error) {
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
 
-        await user.save({ validateBeforeSave: false });
-        return next(new ErrorHandler(error.message, 500))
-    }
+    await user.save({ validateBeforeSave: false });
+    return next(new ErrorHandler(error.message, 500));
+  }
+});
 
-  
-})
-
-const resetPassword = asynchandler(async(req,res)=>{
-  // create hash token 
-  const resetPasswordToken = crypto.createHash("sha256").update(req.params.token).digest("hex")
+const resetPassword = asynchandler(async (req, res) => {
+  // create hash token
+  const resetPasswordToken = crypto
+    .createHash("sha256")
+    .update(req.params.token)
+    .digest("hex");
   const user = await User.findOne({
     resetPasswordToken,
-    resetPasswordExpire:{$gt:Date.now()}
-  })
-  if(!user)
-  {throw new ApiError(400,"invalid token or token is expired")}
+    resetPasswordExpire: { $gt: Date.now() },
+  });
+  if (!user) {
+    throw new ApiError(400, "invalid token or token is expired");
+  }
   user.password = req.body.password;
   user.resetPasswordToken = undefined;
   user.resetPasswordExpire = undefined;
   await user.save();
-  return res.status(200).json(new ApiResponse(200,{}, "password reset successfully"))
-})
-  const updatePassword = asynchandler(async(req,res)=>{
-    const user = await User.findById(req.user._id).select("+password")
-    if(!user)
-    {throw new ApiError(400,"user not found")}
-    const isPasswordCorrect = await user.isPasswordCorrect(req.body.oldPassword)
-    if(!isPasswordCorrect)
-    {throw new ApiError(400,"old password is incorrect")}
-    user.password = req.body.newPassword;
-    await user.save({ validateBeforeSave: false });
-    return res.status(200).json(new ApiResponse(200,{}, "password updated successfully"))
-
-     
-
-  })
-  const updateProfile = asynchandler(async (req, res) => {
-    const { name, email } = req.body;
-    const avatarLocalPath = req.file?.path;
-    let avatarUrl = req.user.avatar?.url;
-
-    // If a new avatar is uploaded, upload to Cloudinary and delete old
-    if (avatarLocalPath) {
-      const avatar = await uploadOnCloudinary(avatarLocalPath);
-      if (!avatar) {
-        throw new ApiError(500, "Something went wrong while uploading avatar");
-      }
-      // Destroy old avatar if exists
-      if (req.user.avatar?.public_id) {
-        await v2.uploader.destroy(req.user.avatar.public_id);
-      }
-      avatarUrl = avatar.url;
-    }
-
-    // Update user
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      {
-        $set: {
-          name: name.trim(),
-          email: email.trim(),
-          avatar: avatarUrl,
-        },
-      },
-      { new: true, runValidators: true }
-    ).select("-password -refreshToken");
-
-    if (!user) {
-      throw new ApiError(400, "User not found");
-    }
-
-    return res
-      .status(200)
-      .json(new ApiResponse(200, user, "Profile updated successfully"));
-  });
-  //Admin Dashboard
-const getAllUsers = asynchandler(async(req,res)=>{
-  const user = await User.find()
-  if(!user)
-  {new ApiError(400,"user not found ")}
   return res
-  .status(200)
-  .json(new ApiResponse(200,user,"user are find succesfully"))
+    .status(200)
+    .json(new ApiResponse(200, {}, "password reset successfully"));
+});
+const updatePassword = asynchandler(async (req, res) => {
+  const user = await User.findById(req.user._id).select("+password");
+  if (!user) {
+    throw new ApiError(400, "user not found");
+  }
+  const isPasswordCorrect = await user.isPasswordCorrect(req.body.oldPassword);
+  if (!isPasswordCorrect) {
+    throw new ApiError(400, "old password is incorrect");
+  }
+  user.password = req.body.newPassword;
+  await user.save({ validateBeforeSave: false });
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "password updated successfully"));
+});
+const updateProfile = asynchandler(async (req, res) => {
+  const { name, email } = req.body;
+  const avatarLocalPath = req.file?.path;
+  let avatarUrl = req.user.avatar?.url;
 
-})
-// get single user (admin)
-const singleUser = asynchandler(async(req,res)=>{
-  const user = await User.findById(req.params.id)
-  if(!user){
-    throw new ApiError(400,"user not found with this id")
+  // If a new avatar is uploaded, upload to Cloudinary and delete old
+  if (avatarLocalPath) {
+    const avatar = await uploadOnCloudinary(avatarLocalPath);
+    if (!avatar) {
+      throw new ApiError(500, "Something went wrong while uploading avatar");
+    }
+    // Destroy old avatar if exists
+    if (req.user.avatar?.public_id) {
+      await v2.uploader.destroy(req.user.avatar.public_id);
+    }
+    avatarUrl = avatar.url;
+  }
+
+  // Update user
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: {
+        name: name.trim(),
+        email: email.trim(),
+        avatar: avatarUrl,
+      },
+    },
+    { new: true, runValidators: true }
+  ).select("-password -refreshToken");
+
+  if (!user) {
+    throw new ApiError(400, "User not found");
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "Profile updated successfully"));
+});
+//Admin Dashboard
+const getAllUsers = asynchandler(async (req, res) => {
+  const user = await User.find();
+  if (!user) {
+    new ApiError(400, "user not found ");
   }
   return res
-  .status(200)
-  .json(new ApiResponse(200,user,"user are find succesfully"))
-})
+    .status(200)
+    .json(new ApiResponse(200, user, "user are find succesfully"));
+});
+// get single user (admin)
+const singleUser = asynchandler(async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) {
+    throw new ApiError(400, "user not found with this id");
+  }
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "user are find succesfully"));
+});
 
 //update user role (admin)
 
-const updateUserRole = asynchandler(async(req,res)=>{
-  const {name,email,gender,role}= req.body
-  const user = await User.findByIdAndUpdate(req.params._id,
+const updateUserRole = asynchandler(async (req, res) => {
+  const { name, email, gender, role } = req.body;
+  const user = await User.findByIdAndUpdate(
+    req.params._id,
     {
-      $set:{
+      $set: {
         name,
         email,
         gender,
-        role
+        role,
       },
-      
-    },{
-      new:true,
-       runValidators: true
+    },
+    {
+      new: true,
+      runValidators: true,
     }
-  )
-  if(!user){
-    throw new ApiError(400,"user not found with this id")
+  );
+  if (!user) {
+    throw new ApiError(400, "user not found with this id");
   }
-return res
-  .status(200)
-  .json(new ApiResponse(200,user,"user updated successfully"))
-})
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "user updated successfully"));
+});
 
 //delete user (admin)
 const deleteUser = asynchandler(async (req, res) => {
@@ -368,5 +377,18 @@ const deleteUser = asynchandler(async (req, res) => {
     .json(new ApiResponse(200, user, "User deleted successfully"));
 });
 
-export { registerUser, loginUser, LogoutUser,getUserDetails, refreshAccessToken, forgetPassword, resetPassword, updatePassword, updateProfile , getAllUsers, singleUser, updateUserRole, deleteUser};
- 
+export {
+  registerUser,
+  loginUser,
+  LogoutUser,
+  getUserDetails,
+  refreshAccessToken,
+  forgetPassword,
+  resetPassword,
+  updatePassword,
+  updateProfile,
+  getAllUsers,
+  singleUser,
+  updateUserRole,
+  deleteUser,
+};

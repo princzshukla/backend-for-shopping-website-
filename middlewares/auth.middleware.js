@@ -26,9 +26,10 @@ export const verifyJwt = asynchandler(async (req, res, next) => {
 
 export const authorizeRoles = (...roles) => {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
-      return next(
-        new ErrorHandler(`Role: ${req.user.role} is not allowed`, 403)
+    if (!req.user || !roles.includes(req.user.role)) {
+      throw new ApiError(
+        403,
+        `Role: ${req.user?.role || "unknown"} is not allowed`
       );
     }
     next();

@@ -11,7 +11,7 @@ import { verifyJwt, authorizeRoles } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 router.route("/order/new").post(verifyJwt, createOrder);
-router.route("/order/:id").get(verifyJwt, getSingleOrderDetails);
+router.route("/order/:id").get(verifyJwt, getrSingleOrderDetails);
 router.route("/orders/me").get(verifyJwt, myOrders);
 
 router
@@ -23,6 +23,4 @@ router
   .put(verifyJwt, authorizeRoles("admin"), updateOrderStatus)
   .delete(verifyJwt, authorizeRoles("admin"), deleteOrder);
 
-
-
-
+export default router;
