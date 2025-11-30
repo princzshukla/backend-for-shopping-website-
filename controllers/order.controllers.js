@@ -4,6 +4,14 @@ import { asynchandler } from "../utils/asynchandler.js";
 import { ApiResponse } from "../utils/apiresponse.js";
 import { Product } from "../models/product.models.js";
 import { sendEmail } from "../utils/sendEmail.js";
+
+// helper to reduce stock when an order is shipped
+const updateStock = async (productId, quantity) => {
+  const product = await Product.findById(productId);
+  if (!product) return;
+  product.stock = (product.stock || 0) - quantity;
+  await product.save({ validateBeforeSave: false });
+};
 //Create new Order
 
 const createOrder = asynchandler(async (req, res) => {
@@ -43,7 +51,7 @@ const createOrder = asynchandler(async (req, res) => {
 //Get single order
 
 const getrSingleOrderDetails = asynchandler(async (req, res) => {
-  const order = await Order.findById(req.params._id).populate(
+  const order = await Order.findById(req.params.id).populate(
     "user",
     "name email"
   );
@@ -59,9 +67,12 @@ const getrSingleOrderDetails = asynchandler(async (req, res) => {
 
 const myOrders = asynchandler(async (req, res) => {
   const orders = await Order.find({ user: req.user._id });
-  if (!orders) {
+  if (!orders || orders.length === 0) {
     throw new ApiError(400, "no orders found for this user");
   }
+  return res
+    .status(200)
+    .json(new ApiResponse(200, orders, "orders fetched successfully"));
 });
 //get all orders --admin
 
@@ -86,7 +97,7 @@ const getAllOrders = asynchandler(async (req, res) => {
 });
 //Update order status -- admin
 const updateOrderStatus = asynchandler(async (req, res) => {
-  const order = await Order.findById(req.params._id);
+  const order = await Order.findById(req.params.id);
   if (!order) {
     throw new ApiError(400, "order not found with this id");
   }
@@ -95,9 +106,10 @@ const updateOrderStatus = asynchandler(async (req, res) => {
   }
   if (req.body.status === "Shipped") {
     order.shippedAt = Date.now();
-    order.orderItems.forEach(async (i) => {
+    // update stock for each item
+    for (const i of order.orderItems) {
       await updateStock(i.product, i.quantity);
-    });
+    }
   }
   order.orderStatus = req.body.status;
   if (req.body.status === "Delivered") {
@@ -115,10 +127,10 @@ const deleteOrder = asynchandler(async (req, res) => {
   if (!order) {
     throw new ApiError(400, "order not found ");
   }
-  order.remove();
+  await order.remove();
   return res
     .status(200)
-    .json(new ApiResponse(200, deleteOrder, "order are deleted successfully"));
+    .json(new ApiResponse(200, order, "order deleted successfully"));
 });
 
 export {

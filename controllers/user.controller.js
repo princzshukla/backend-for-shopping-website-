@@ -44,10 +44,18 @@ const registerUser = asynchandler(async (req, res) => {
     );
   }
 
-  const avatarLocalPath = req.files?.avatar?.[0]?.path;
-  const avatar = await uploadOnCloudinary(avatarLocalPath);
-  if (!avatar) {
-    throw new ApiError(500, "someting went wrong while uploading avatar");
+  // multer `upload.single('avatar')` places file on `req.file`
+  const avatarLocalPath = req.file?.path;
+  let avatarObj = undefined;
+  if (avatarLocalPath) {
+    const uploaded = await uploadOnCloudinary(avatarLocalPath);
+    if (!uploaded) {
+      throw new ApiError(500, "someting went wrong while uploading avatar");
+    }
+    avatarObj = {
+      public_id: uploaded.public_id,
+      url: uploaded.secure_url || uploaded.url,
+    };
   }
 
   const user = await User.create({
@@ -55,7 +63,7 @@ const registerUser = asynchandler(async (req, res) => {
     email,
     gender,
     password,
-    avatar: avatar.url,
+    avatar: avatarObj,
   });
 
   if (!user) {
@@ -213,7 +221,8 @@ const forgetPassword = asynchandler(async (req, res) => {
   if (!user) {
     throw new ApiError(400, "user not found with this email");
   }
-  const resetToken = user.resetPasswordToken();
+  // generate reset token and persist to user
+  const resetToken = user.getResetPasswordToken();
   await user.save({ validateBeforeSave: false });
 
   const resetPasswordUrl = `https://${req.get(
@@ -235,7 +244,7 @@ const forgetPassword = asynchandler(async (req, res) => {
     user.resetPasswordExpire = undefined;
 
     await user.save({ validateBeforeSave: false });
-    return next(new ErrorHandler(error.message, 500));
+    throw new ApiError(500, error?.message || "failed to send reset email");
   }
 });
 
@@ -278,19 +287,23 @@ const updatePassword = asynchandler(async (req, res) => {
 const updateProfile = asynchandler(async (req, res) => {
   const { name, email } = req.body;
   const avatarLocalPath = req.file?.path;
-  let avatarUrl = req.user.avatar?.url;
+  // keep existing avatar object if present
+  let avatarObj = req.user.avatar || undefined;
 
   // If a new avatar is uploaded, upload to Cloudinary and delete old
   if (avatarLocalPath) {
-    const avatar = await uploadOnCloudinary(avatarLocalPath);
-    if (!avatar) {
+    const uploaded = await uploadOnCloudinary(avatarLocalPath);
+    if (!uploaded) {
       throw new ApiError(500, "Something went wrong while uploading avatar");
     }
     // Destroy old avatar if exists
     if (req.user.avatar?.public_id) {
       await v2.uploader.destroy(req.user.avatar.public_id);
     }
-    avatarUrl = avatar.url;
+    avatarObj = {
+      public_id: uploaded.public_id,
+      url: uploaded.secure_url || uploaded.url,
+    };
   }
 
   // Update user
@@ -300,7 +313,7 @@ const updateProfile = asynchandler(async (req, res) => {
       $set: {
         name: name.trim(),
         email: email.trim(),
-        avatar: avatarUrl,
+        avatar: avatarObj,
       },
     },
     { new: true, runValidators: true }
@@ -340,7 +353,7 @@ const singleUser = asynchandler(async (req, res) => {
 const updateUserRole = asynchandler(async (req, res) => {
   const { name, email, gender, role } = req.body;
   const user = await User.findByIdAndUpdate(
-    req.params._id,
+    req.params.id,
     {
       $set: {
         name,
@@ -364,7 +377,7 @@ const updateUserRole = asynchandler(async (req, res) => {
 
 //delete user (admin)
 const deleteUser = asynchandler(async (req, res) => {
-  const userId = req.params._id;
+  const userId = req.params.id;
 
   const user = await User.findByIdAndDelete(userId);
 
